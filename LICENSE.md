@@ -1,4 +1,5 @@
-[OmniBlast Datapack for Minecraft][] by [MeeniMC][] is
+[OmniBlast Datapack for Minecraft][] by [MeeniMC][]
+
 licensed under [CC BY-NC-SA 4.0![][1]![][2]![][3]![][4]][5]
 
   [OmniBlast Datapack for Minecraft]: https://github.com/MeeniMc/OmniBlast
