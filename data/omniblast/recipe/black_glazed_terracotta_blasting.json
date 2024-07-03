@@ -1,0 +1,12 @@
+{
+  "type": "minecraft:blasting",
+  "ingredient": {
+    "item": "minecraft:black_terracotta"
+  },
+  "result": {
+    "id": "minecraft:black_glazed_terracotta"
+  },
+  "category": "blocks",
+  "experience": 0.1,
+  "cookingtime": 100
+}
