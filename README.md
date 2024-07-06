@@ -34,9 +34,9 @@ Notes
 license
 -------
 
-[OmniBlast Datapack for Minecraft][] by [MeeniMC][]
+[OmniBlast Datapack for Minecraft][] by [MeeniMC][] is licensed under [CC BY-NC-SA 4.0][5]
 
-licensed under [CC BY-NC-SA 4.0![][1]![][2]![][3]![][4]][5]
+![][1]![][2]![][3]![][4]
 
 Contact me if you have commercial plans.
 
