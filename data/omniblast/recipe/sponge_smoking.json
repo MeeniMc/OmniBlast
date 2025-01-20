@@ -1,8 +1,6 @@
 {
   "type": "minecraft:smoking",
-  "ingredient": {
-    "item": "minecraft:wet_sponge"
-  },
+  "ingredient": "minecraft:wet_sponge",
   "result": {
     "id": "minecraft:sponge"
   },
