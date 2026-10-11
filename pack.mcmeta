@@ -15,6 +15,12 @@
         "formats": [43, 48]
       },
       {
+        "directory": "1.21.2-current",
+        "min_format": 49,
+        "max_format": 120,
+        "formats": [49, 120]
+      },
+      {
         "directory": "26.3-current",
         "min_format": 121,
         "max_format": 2147483647,
