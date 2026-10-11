@@ -1,0 +1,59 @@
+# On every tag push: archive that tag and open a DRAFT GitHub release with the
+# zip attached. No secrets needed -- the built-in GITHUB_TOKEN can create
+# releases and upload assets on any repo. You review the draft and publish by
+# hand (Releases page -> Edit -> Publish).
+name: Release (draft)
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      # Build the pack from the tag. No --prefix: pack.mcmeta must sit
+      # at the zip root. git archive reads the committed tree only, so
+      # nothing uncommitted or local can leak in.
+      - name: Build pack archive
+        id: build
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          ZIP="OmniBlast-${VERSION}.zip"
+          git archive --format=zip -o "$ZIP" "${GITHUB_REF_NAME}"
+          MD5=$(md5sum "$ZIP" | cut -d' ' -f1)
+          echo "ZIP=$ZIP" >> "$GITHUB_OUTPUT"
+          echo "MD5=$MD5" >> "$GITHUB_OUTPUT"
+
+      # Create the draft release and upload the zip.
+      - name: Create draft release
+        id: create_release
+        uses: actions/create-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: ${{ github.ref_name }}
+          release_name: OmniBlast ${{ steps.build.outputs.ZIP }}
+          draft: true
+          body: |
+            Release built by GitHub Actions from tag ${{ github.ref_name }}.
+
+            Provenance:
+            - Git commit: ${{ github.sha }}
+            - MD5: ${{ steps.build.outputs.MD5 }}
+
+            Verify: `md5sum ${{ steps.build.outputs.ZIP }}`
+
+      - name: Upload zip
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: ${{ github.ref_name }}
+          release_id: ${{ steps.create_release.outputs.id }}
+          asset_path: ${{ steps.build.outputs.ZIP }}
+          asset_name: ${{ steps.build.outputs.ZIP }}
+          content_type: application/zip
