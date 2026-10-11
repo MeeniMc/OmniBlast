@@ -1,8 +1,8 @@
 {
   "type": "minecraft:smoking",
-  "category": "food",
+  "category": "misc",
   "cookingtime": 100,
-  "experience": 0.1,
+  "experience": 1.0,
   "ingredient": {
     "item": "minecraft:sea_pickle"
   },
