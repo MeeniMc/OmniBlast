@@ -1,6 +1,6 @@
 {
   "type": "minecraft:smoking",
-  "category": "blocks",
+  "category": "misc",
   "cookingtime": 100,
   "experience": 0.15,
   "ingredient": {
