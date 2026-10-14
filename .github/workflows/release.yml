@@ -11,19 +11,24 @@ on:
 
 jobs:
   release:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-slim
     permissions:
       contents: write
     steps:
-      # Build the pack from the tag. No --prefix: pack.mcmeta must sit
-      # at the zip root. git archive reads the committed tree only, so
-      # nothing uncommitted or local can leak in.
+      # GitHub does not check out the repo implicitly; without this the
+      # workspace has no .git and git archive fails.
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # Build the pack from the tag's commit. No --prefix: pack.mcmeta
+      # must sit at the zip root. git archive reads the committed tree
+      # only, so nothing uncommitted or local can leak in.
       - name: Build pack archive
         id: build
         run: |
           VERSION="${GITHUB_REF_NAME#v}"
           ZIP="OmniBlast-${VERSION}.zip"
-          git archive --format=zip -o "$ZIP" "${GITHUB_REF_NAME}"
+          git archive --format=zip -o "$ZIP" "${GITHUB_SHA}"
           MD5=$(md5sum "$ZIP" | cut -d' ' -f1)
           echo "ZIP=$ZIP" >> "$GITHUB_OUTPUT"
           echo "MD5=$MD5" >> "$GITHUB_OUTPUT"
