@@ -14,51 +14,96 @@ jobs:
     runs-on: ubuntu-slim
     permissions:
       contents: write
+      # Sigstore OIDC certificate (id-token) and persisting the attestation.
+      id-token: write
+      attestations: write
+    env:
+      # GITHUB_TOKEN is not exported by default; without this mapping curl
+      # sends an empty token and every API call answers 401.
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:
       # GitHub does not check out the repo implicitly; without this the
       # workspace has no .git and git archive fails.
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       # Build the pack from the tag's commit. No --prefix: pack.mcmeta
       # must sit at the zip root. git archive reads the committed tree
-      # only, so nothing uncommitted or local can leak in.
+      # only, so nothing uncommitted or local can leak in. .gitattributes
+      # (export-ignore) keeps the CI config out of the datapack.
       - name: Build pack archive
         id: build
         run: |
           VERSION="${GITHUB_REF_NAME#v}"
           ZIP="OmniBlast-${VERSION}.zip"
           git archive --format=zip -o "$ZIP" "${GITHUB_SHA}"
-          MD5=$(md5sum "$ZIP" | cut -d' ' -f1)
           echo "ZIP=$ZIP" >> "$GITHUB_OUTPUT"
-          echo "MD5=$MD5" >> "$GITHUB_OUTPUT"
 
-      # Create the draft release and upload the zip.
+      # Sigstore-signed SLSA build provenance for the zip, stored in GitHub's
+      # attestations API. Anyone can check a downloaded copy against the repo
+      # with `gh attestation verify <zip> --repo MeeniMc/OmniBlast`; the digest
+      # it signs is the same SHA-256 GitHub records on the release asset.
+      - name: Attest zip
+        id: attest
+        uses: actions/attest@v4
+        with:
+          subject-path: ${{ steps.build.outputs.ZIP }}
+
+      # REST API instead of the deprecated actions/create-release and
+      # actions/upload-release-asset (node12, unmaintained). curl and jq are
+      # preinstalled on ubuntu-slim. The previous release is discovered from
+      # the releases API, so this file never needs editing between versions.
       - name: Create draft release
         id: create_release
-        uses: actions/create-release@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          tag_name: ${{ github.ref_name }}
-          release_name: OmniBlast ${{ steps.build.outputs.ZIP }}
-          draft: true
-          body: |
-            Release built by GitHub Actions from tag ${{ github.ref_name }}.
+        run: |
+          ZIP='${{ steps.build.outputs.ZIP }}'
+          ATTEST='${{ steps.attest.outputs.attestation-url }}'
+          TAG="$GITHUB_REF_NAME"
+          # Capture the body instead of piping into jq: a pipe hides curl's
+          # HTTP failure behind jq's exit code and the error body is lost.
+          LIST=$(curl -sS --fail-with-body "https://api.github.com/repos/$GITHUB_REPOSITORY/releases?per_page=100" \
+            -H "Authorization: Bearer $GITHUB_TOKEN" \
+            -H "Accept: application/vnd.github+json") \
+            || { echo "releases list failed: $LIST"; exit 1; }
+          PREV=$(jq -r --arg cur "$TAG" 'map(select(.draft == false and .prerelease == false and .tag_name != $cur)) | if length == 0 then "null" else sort_by(.published_at // .created_at) | last | .tag_name end' <<<"$LIST")
+          if [ "$PREV" = "null" ] || [ -z "$PREV" ]; then
+            CHANGELOG="(no previous release)"
+          else
+            CHANGELOG="**Full Changelog**: https://github.com/$GITHUB_REPOSITORY/compare/$PREV...$TAG"
+          fi
+          BODY=$(cat <<EOF
+          $CHANGELOG
 
-            Provenance:
-            - Git commit: ${{ github.sha }}
-            - MD5: ${{ steps.build.outputs.MD5 }}
+          Provenance:
+          - Built by GitHub Actions from tag $TAG
+          - Git commit: $GITHUB_SHA
+          - Attestation: $ATTEST
 
-            Verify: `md5sum ${{ steps.build.outputs.ZIP }}`
+          Verify: \`gh attestation verify $ZIP --repo $GITHUB_REPOSITORY\`
+          EOF
+          )
+          PAYLOAD=$(jq -n --arg tag "$TAG" --arg name "$TAG" --arg body "$BODY" '{tag_name:$tag,name:$name,body:$body,draft:true}')
+          RESP=$(curl -sS --fail-with-body -X POST \
+            -H "Authorization: Bearer $GITHUB_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2026-03-10" \
+            -d "$PAYLOAD" \
+            "https://api.github.com/repos/$GITHUB_REPOSITORY/releases") \
+            || { echo "create release failed: $RESP"; exit 1; }
+          echo "upload_url=$(echo "$RESP" | jq -r .upload_url)" >> "$GITHUB_OUTPUT"
 
       - name: Upload zip
-        uses: actions/upload-release-asset@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          tag_name: ${{ github.ref_name }}
-          release_id: ${{ steps.create_release.outputs.id }}
-          asset_path: ${{ steps.build.outputs.ZIP }}
-          asset_name: ${{ steps.build.outputs.ZIP }}
-          content_type: application/zip
+        run: |
+          ZIP='${{ steps.build.outputs.ZIP }}'
+          # The API's upload_url carries a "{?name,label}" template; the asset
+          # name is a required query parameter and the body is the raw file.
+          URL="${{ steps.create_release.outputs.upload_url }}"
+          URL="${URL%\{?*}"
+          URL="${URL}?name=$ZIP"
+          BODY=$(curl -sS --fail-with-body -X POST \
+            -H "Authorization: Bearer $GITHUB_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            -H "Content-Type: application/zip" \
+            --data-binary "@$ZIP" \
+            "$URL") || { echo "asset upload failed: $BODY"; exit 1; }
+          echo "Uploaded $(echo "$BODY" | jq -r '.name + " (" + (.size|tostring) + " bytes)"')"
